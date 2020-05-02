@@ -1,39 +1,39 @@
-# Copyright © 2017 Zlatko Čalušić
-#
-# Use of this source code is governed by an MIT-style license that can be found in the LICENSE file.
-#
+# HELP
+# This will output the help for each task
+# thanks to https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
+.PHONY: help
 
-DOCKER_IMAGE ?= restic/rest-server
+help: ## This help.
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-REST_SERVER_VERSION := $(strip $(shell cat VERSION))
+.DEFAULT_GOAL := help
 
-.PHONY: default rest-server install uninstall docker_build docker_push clean
+export APP     := sretooling/restic-server
 
-default: rest-server
+# ensure you create an initial commit on your your git.. `git tag 0.0.1 ; git push origin 0.0.1`
+export TAG     := $(shell git describe --tags --always --dirty)
+export IMG     := "$(APP):$(TAG)"
 
-rest-server:
-	@go run build.go
+# DOCKER TASKS
+# Build the container
+build: ## Build the container
+	docker build -t $(IMG) .
 
-install: rest-server
-	/usr/bin/install -m 755 rest-server /usr/local/bin/rest-server
+publish-all: login publish-version publish-latest
 
-uninstall:
-	rm -f /usr/local/bin/rest-server
+publish-latest: tag-latest login ## Publish the `latest` taged container to ECR
+	@echo 'publish latest to $(DOCKER_REPO)'
+	docker push $(APP):latest
 
-docker_build:
-	docker pull golang:alpine
-	docker run --rm -it \
-		-v $(CURDIR):/go/src/github.com/restic/rest-server \
-		-w /go/src/github.com/restic/rest-server \
-		golang:alpine \
-		go run build.go
-	docker pull alpine
-	docker build -t $(DOCKER_IMAGE):$(REST_SERVER_VERSION) .
-	docker tag $(DOCKER_IMAGE):$(REST_SERVER_VERSION) $(DOCKER_IMAGE):latest
+publish-version: login ## Publish the `{version}` taged container to ECR
+	@echo 'publish $(TAG)'
+	docker push $(APP):$(TAG)
 
-docker_push:
-	docker push $(DOCKER_IMAGE):$(REST_SERVER_VERSION)
-	docker push $(DOCKER_IMAGE):latest
+tag-latest: ## Generate container `{version}` tag
+	@echo 'create tag latest'
+	docker tag $(APP):$(TAG) $(APP):latest
 
-clean:
-	rm -f rest-server
+# log into dockerhub
+login:
+	docker login -u $(DOCKER_USER) -p $(DOCKER_PASS)
+
